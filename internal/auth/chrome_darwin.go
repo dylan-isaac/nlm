@@ -24,6 +24,7 @@ var macOSBrowserPaths = []BrowserPriority{
 	{"/Applications/Chromium.app/Contents/MacOS/Chromium", "Chromium", BrowserChrome, ""},
 	{"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge", "Microsoft Edge", BrowserChrome, ""},
 	{"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", "Brave", BrowserChrome, ""},
+	{"/Applications/Helium.app/Contents/MacOS/Helium", "Helium", BrowserChrome, ""},
 	{"/Applications/Safari.app/Contents/MacOS/Safari", "Safari", BrowserSafari, ""},
 }
 
@@ -39,8 +40,9 @@ func getChromePath() string {
 
 	// Try finding browsers via mdfind
 	browserPaths := map[string]string{
-		"com.google.Chrome": "Contents/MacOS/Google Chrome",
-		"com.brave.Browser": "Contents/MacOS/Brave Browser",
+		"com.google.Chrome":  "Contents/MacOS/Google Chrome",
+		"com.brave.Browser":  "Contents/MacOS/Brave Browser",
+		"net.imput.helium":   "Contents/MacOS/Helium",
 	}
 
 	for bundleID, execPath := range browserPaths {
@@ -81,6 +83,18 @@ func getBrowserPathForProfile(browserName string) string {
 		if path := findBrowserViaMDFind("com.google.Chrome.canary"); path != "" {
 			return filepath.Join(path, "Contents/MacOS/Google Chrome Canary")
 		}
+	case "Helium":
+		heliumPaths := []string{
+			"/Applications/Helium.app/Contents/MacOS/Helium",
+		}
+		for _, path := range heliumPaths {
+			if _, err := os.Stat(path); err == nil {
+				return path
+			}
+		}
+		if path := findBrowserViaMDFind("net.imput.helium"); path != "" {
+			return filepath.Join(path, "Contents/MacOS/Helium")
+		}
 	}
 
 	// Fallback to any Chrome-based browser
@@ -114,6 +128,7 @@ func detectChrome(debug bool) Browser {
 		"org.chromium.Chromium":    {Name: "Chromium", Type: BrowserChrome},
 		"com.microsoft.edgemac":    {Name: "Microsoft Edge", Type: BrowserChrome},
 		"com.brave.Browser":        {Name: "Brave", Type: BrowserChrome},
+		"net.imput.helium":         {Name: "Helium", Type: BrowserChrome},
 	}
 
 	for bundleID, browser := range browserBundles {
@@ -215,6 +230,11 @@ func getCanaryProfilePath() string {
 func getBraveProfilePath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser")
+}
+
+func getHeliumProfilePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Library", "Application Support", "net.imput.helium")
 }
 
 func checkBrowserInstallation() string {

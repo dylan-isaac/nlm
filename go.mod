@@ -1,4 +1,4 @@
-module github.com/tmc/nlm
+module github.com/dylan-isaac/nlm
 
 go 1.24
 

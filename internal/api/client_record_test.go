@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/tmc/nlm/internal/batchexecute"
-	"github.com/tmc/nlm/internal/httprr"
+	"github.com/dylan-isaac/nlm/internal/batchexecute"
+	"github.com/dylan-isaac/nlm/internal/httprr"
 )
 
 // loadNLMCredentials is now defined in test_helpers.go to avoid duplication

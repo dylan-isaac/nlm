@@ -238,6 +238,13 @@ func (ba *BrowserAuth) scanProfilesForDomain(targetDomain string) ([]ProfileInfo
 		allProfiles = append(allProfiles, braveProfiles...)
 	}
 
+	// Check Helium profiles
+	heliumPath := getHeliumProfilePath()
+	heliumProfiles, err := scanBrowserProfiles(heliumPath, "Helium", targetDomain)
+	if err == nil {
+		allProfiles = append(allProfiles, heliumProfiles...)
+	}
+
 	// First sort by whether they have target cookies (if a target domain was specified)
 	if targetDomain != "" {
 		sort.Slice(allProfiles, func(i, j int) bool {

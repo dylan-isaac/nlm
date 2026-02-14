@@ -5,13 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/tmc/nlm/internal/auth"
+	"github.com/dylan-isaac/nlm/internal/auth"
 	"golang.org/x/term"
 )
 
@@ -230,7 +231,15 @@ func handleAuth(args []string, debug bool) (string, string, error) {
 		return "", "", fmt.Errorf("browser auth failed: %w", err)
 	}
 
-	return persistAuthToDisk(cookies, token, opts.ProfileName)
+	// Extract authuser from target URL if present
+	extractedAuthUser := ""
+	if u, err := url.Parse(opts.TargetURL); err == nil {
+		if au := u.Query().Get("authuser"); au != "" {
+			extractedAuthUser = au
+		}
+	}
+
+	return persistAuthToDisk(cookies, token, opts.ProfileName, extractedAuthUser)
 }
 
 func detectAuthInfo(cmd string) (string, string, error) {
@@ -249,11 +258,11 @@ func detectAuthInfo(cmd string) (string, string, error) {
 		return "", "", fmt.Errorf("no auth token found")
 	}
 	authToken := atMatch[1]
-	persistAuthToDisk(cookies, authToken, "")
+	persistAuthToDisk(cookies, authToken, "", "")
 	return authToken, cookies, nil
 }
 
-func persistAuthToDisk(cookies, authToken, profileName string) (string, string, error) {
+func persistAuthToDisk(cookies, authToken, profileName, authUserIdx string) (string, string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", "", fmt.Errorf("get home dir: %w", err)
@@ -267,10 +276,11 @@ func persistAuthToDisk(cookies, authToken, profileName string) (string, string, 
 
 	// Create or update env file
 	envFile := filepath.Join(nlmDir, "env")
-	content := fmt.Sprintf("NLM_COOKIES=%q\nNLM_AUTH_TOKEN=%q\nNLM_BROWSER_PROFILE=%q\n",
+	content := fmt.Sprintf("NLM_COOKIES=%q\nNLM_AUTH_TOKEN=%q\nNLM_BROWSER_PROFILE=%q\nNLM_AUTHUSER=%q\n",
 		cookies,
 		authToken,
 		profileName,
+		authUserIdx,
 	)
 
 	if err := os.WriteFile(envFile, []byte(content), 0600); err != nil {

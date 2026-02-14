@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/tmc/nlm/internal/batchexecute"
+	"github.com/dylan-isaac/nlm/internal/batchexecute"
 )
 
 // RPC endpoint IDs for NotebookLM services

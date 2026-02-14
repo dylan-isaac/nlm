@@ -13,13 +13,13 @@ import (
 	"text/tabwriter"
 	"time"
 
-	pb "github.com/tmc/nlm/gen/notebooklm/v1alpha1"
-	"github.com/tmc/nlm/gen/service"
-	"github.com/tmc/nlm/internal/api"
-	"github.com/tmc/nlm/internal/auth"
-	"github.com/tmc/nlm/internal/batchexecute"
-	"github.com/tmc/nlm/internal/beprotojson"
-	"github.com/tmc/nlm/internal/rpc"
+	pb "github.com/dylan-isaac/nlm/gen/notebooklm/v1alpha1"
+	"github.com/dylan-isaac/nlm/gen/service"
+	"github.com/dylan-isaac/nlm/internal/api"
+	"github.com/dylan-isaac/nlm/internal/auth"
+	"github.com/dylan-isaac/nlm/internal/batchexecute"
+	"github.com/dylan-isaac/nlm/internal/beprotojson"
+	"github.com/dylan-isaac/nlm/internal/rpc"
 )
 
 // Global flags
@@ -34,7 +34,8 @@ var (
 	mimeType          string
 	chunkedResponse   bool // Control rt=c parameter for chunked vs JSON array response
 	useDirectRPC      bool // Use direct RPC calls instead of orchestration service
-	skipSources       bool // Skip fetching sources for chat (useful when project is inaccessible)
+	skipSources       bool   // Skip fetching sources for chat (useful when project is inaccessible)
+	authUser          string // Google auth user index (for multi-account profiles)
 )
 
 // ChatSession represents a persistent chat conversation
@@ -64,6 +65,7 @@ func init() {
 	flag.StringVar(&authToken, "auth", os.Getenv("NLM_AUTH_TOKEN"), "auth token (or set NLM_AUTH_TOKEN)")
 	flag.StringVar(&cookies, "cookies", os.Getenv("NLM_COOKIES"), "cookies for authentication (or set NLM_COOKIES)")
 	flag.StringVar(&mimeType, "mime", "", "specify MIME type for content (e.g. 'text/xml', 'application/json')")
+	flag.StringVar(&authUser, "authuser", os.Getenv("NLM_AUTHUSER"), "Google auth user index for multi-account profiles (or set NLM_AUTHUSER)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: nlm <command> [arguments]\n\n")
@@ -547,6 +549,24 @@ func run() error {
 		}
 	}
 
+	// Load authuser from env if not set via flag
+	if authUser == "" {
+		authUser = os.Getenv("NLM_AUTHUSER")
+	}
+
+	// Add authuser if set (for multi-account Google profiles)
+	if authUser != "" {
+		opts = append(opts, batchexecute.WithHeaders(map[string]string{
+			"x-goog-authuser": authUser,
+		}))
+		opts = append(opts, batchexecute.WithURLParams(map[string]string{
+			"authuser": authUser,
+		}))
+		if debug {
+			fmt.Fprintf(os.Stderr, "DEBUG: Using authuser=%s\n", authUser)
+		}
+	}
+
 	for i := 0; i < 3; i++ {
 		if i > 0 {
 			if i == 1 {
@@ -654,10 +674,12 @@ func saveCredentials(authToken, cookies string) error {
 	content := fmt.Sprintf(`NLM_COOKIES=%q
 NLM_AUTH_TOKEN=%q
 NLM_BROWSER_PROFILE=%q
+NLM_AUTHUSER=%q
 `,
 		cookies,
 		authToken,
 		chromeProfile,
+		authUser,
 	)
 
 	if err := os.WriteFile(envFile, []byte(content), 0600); err != nil {

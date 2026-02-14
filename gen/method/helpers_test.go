@@ -3,7 +3,7 @@ package method
 import (
 	"testing"
 
-	notebooklmv1alpha1 "github.com/tmc/nlm/gen/notebooklm/v1alpha1"
+	notebooklmv1alpha1 "github.com/dylan-isaac/nlm/gen/notebooklm/v1alpha1"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 

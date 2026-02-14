@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/tmc/nlm/gen/notebooklm/v1alpha1"
-	"github.com/tmc/nlm/gen/service"
-	"github.com/tmc/nlm/internal/batchexecute"
-	"github.com/tmc/nlm/internal/rpc"
+	pb "github.com/dylan-isaac/nlm/gen/notebooklm/v1alpha1"
+	"github.com/dylan-isaac/nlm/gen/service"
+	"github.com/dylan-isaac/nlm/internal/batchexecute"
+	"github.com/dylan-isaac/nlm/internal/rpc"
 )
 
 type Notebook = pb.Project

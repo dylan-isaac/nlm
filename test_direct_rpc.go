@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tmc/nlm/internal/batchexecute"
-	"github.com/tmc/nlm/internal/rpc"
+	"github.com/dylan-isaac/nlm/internal/batchexecute"
+	"github.com/dylan-isaac/nlm/internal/rpc"
 )
 
 func main() {

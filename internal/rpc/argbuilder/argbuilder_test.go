@@ -3,7 +3,7 @@ package argbuilder
 import (
 	"testing"
 
-	notebooklm "github.com/tmc/nlm/gen/notebooklm/v1alpha1"
+	notebooklm "github.com/dylan-isaac/nlm/gen/notebooklm/v1alpha1"
 	"google.golang.org/protobuf/proto"
 )
 

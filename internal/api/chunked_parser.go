@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	pb "github.com/tmc/nlm/gen/notebooklm/v1alpha1"
-	"github.com/tmc/nlm/internal/beprotojson"
+	pb "github.com/dylan-isaac/nlm/gen/notebooklm/v1alpha1"
+	"github.com/dylan-isaac/nlm/internal/beprotojson"
 )
 
 // ChunkedResponseParser is a specialized parser for NotebookLM's chunked response format

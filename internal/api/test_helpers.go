@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	pb "github.com/tmc/nlm/gen/notebooklm/v1alpha1"
-	"github.com/tmc/nlm/internal/batchexecute"
-	"github.com/tmc/nlm/internal/httprr"
+	pb "github.com/dylan-isaac/nlm/gen/notebooklm/v1alpha1"
+	"github.com/dylan-isaac/nlm/internal/batchexecute"
+	"github.com/dylan-isaac/nlm/internal/httprr"
 )
 
 // loadNLMCredentials loads credentials from ~/.nlm/env file if environment variables are not set
