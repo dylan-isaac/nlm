@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/dylan-isaac/nlm/gen/method"
@@ -13,18 +14,36 @@ import (
 	"github.com/dylan-isaac/nlm/internal/batchexecute"
 	"github.com/dylan-isaac/nlm/internal/beprotojson"
 	"github.com/dylan-isaac/nlm/internal/rpc"
+	"github.com/dylan-isaac/nlm/internal/rpc/grpcendpoint"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // LabsTailwindOrchestrationServiceClient is a generated client for the LabsTailwindOrchestrationService service.
 type LabsTailwindOrchestrationServiceClient struct {
-	rpcClient *rpc.Client
+	rpcClient  *rpc.Client
+	grpcClient *grpcendpoint.Client
 }
 
 // NewLabsTailwindOrchestrationServiceClient creates a new client for the LabsTailwindOrchestrationService service.
 func NewLabsTailwindOrchestrationServiceClient(authToken, cookies string, opts ...batchexecute.Option) *LabsTailwindOrchestrationServiceClient {
+	rpcClient := rpc.New(authToken, cookies, opts...)
+
+	// Bridge batchexecute options to grpcendpoint options
+	cfg := rpcClient.Config
+	var grpcOpts []grpcendpoint.Option
+	if cfg.Debug {
+		grpcOpts = append(grpcOpts, grpcendpoint.WithDebug(true))
+	}
+	if len(cfg.Headers) > 0 {
+		grpcOpts = append(grpcOpts, grpcendpoint.WithHeaders(cfg.Headers))
+	}
+	if len(cfg.URLParams) > 0 {
+		grpcOpts = append(grpcOpts, grpcendpoint.WithURLParams(cfg.URLParams))
+	}
+
 	return &LabsTailwindOrchestrationServiceClient{
-		rpcClient: rpc.New(authToken, cookies, opts...),
+		rpcClient:  rpcClient,
+		grpcClient: grpcendpoint.NewClient(authToken, cookies, grpcOpts...),
 	}
 }
 
@@ -700,27 +719,70 @@ func (c *LabsTailwindOrchestrationServiceClient) GenerateDocumentGuides(ctx cont
 	return &result, nil
 }
 
-// GenerateFreeFormStreamed calls the GenerateFreeFormStreamed RPC method.
+// GenerateFreeFormStreamed calls the GenerateFreeFormStreamed RPC method
+// via the gRPC-Web endpoint (the old batchexecute RPC ID "BD" now returns 400).
 func (c *LabsTailwindOrchestrationServiceClient) GenerateFreeFormStreamed(ctx context.Context, req *notebooklmv1alpha1.GenerateFreeFormStreamedRequest) (*notebooklmv1alpha1.GenerateFreeFormStreamedResponse, error) {
-	// Build the RPC call
-	call := rpc.Call{
-		ID:   "BD",
-		Args: method.EncodeGenerateFreeFormStreamedArgs(req),
+	// Build source array: each source is [["sourceId"]] (double-wrapped)
+	sources := make([]interface{}, len(req.SourceIds))
+	for i, id := range req.SourceIds {
+		sources[i] = []interface{}{[]interface{}{id}}
 	}
 
-	// Execute the RPC
-	resp, err := c.rpcClient.Do(call)
+	// Build inner args matching the gRPC-Web endpoint format:
+	// [sources, prompt, conv_history, mode, session_id, null, null, project_id]
+	innerArgs := []interface{}{
+		sources,        // position 0: source array
+		req.Prompt,     // position 1: prompt
+		nil,            // position 2: conversation history (null for first message)
+		[]interface{}{2}, // position 3: mode
+		nil,            // position 4: session/conversation ID (null for first)
+		nil,            // position 5
+		nil,            // position 6
+		req.ProjectId,  // position 7: project/notebook ID
+	}
+
+	// Stringify the inner args and wrap in [null, "<json>"] envelope
+	innerJSON, err := json.Marshal(innerArgs)
+	if err != nil {
+		return nil, fmt.Errorf("GenerateFreeFormStreamed: marshal args: %w", err)
+	}
+	body := []interface{}{nil, string(innerJSON)}
+
+	grpcReq := grpcendpoint.Request{
+		Endpoint: "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed",
+		Body:     body,
+	}
+
+	// Execute via gRPC-Web endpoint
+	resp, err := c.grpcClient.ExecuteRPC(grpcReq)
 	if err != nil {
 		return nil, fmt.Errorf("GenerateFreeFormStreamed: %w", err)
 	}
 
-	// Decode the response
-	var result notebooklmv1alpha1.GenerateFreeFormStreamedResponse
-	if err := beprotojson.Unmarshal(resp, &result); err != nil {
-		return nil, fmt.Errorf("GenerateFreeFormStreamed: unmarshal response: %w", err)
+	// Parse the response directly from JSON.
+	// The gRPC-Web response format is: [[text], metadata, citations, null, is_final]
+	// Position 0 contains the response text, potentially nested in arrays.
+	var outer []json.RawMessage
+	if err := json.Unmarshal(resp, &outer); err != nil {
+		return nil, fmt.Errorf("GenerateFreeFormStreamed: unmarshal outer: %w", err)
+	}
+	if len(outer) == 0 {
+		return nil, fmt.Errorf("GenerateFreeFormStreamed: empty response array")
 	}
 
-	return &result, nil
+	// Extract text from position 0, unwrapping nested arrays until we find a string
+	chunk := extractText(outer[0])
+
+	// Position 4 (if present) is is_final bool
+	isFinal := false
+	if len(outer) > 4 {
+		_ = json.Unmarshal(outer[4], &isFinal) // ignore error, default false
+	}
+
+	return &notebooklmv1alpha1.GenerateFreeFormStreamedResponse{
+		Chunk:   chunk,
+		IsFinal: isFinal,
+	}, nil
 }
 
 // GenerateNotebookGuide calls the GenerateNotebookGuide RPC method.
@@ -974,4 +1036,22 @@ func (c *LabsTailwindOrchestrationServiceClient) MutateAccount(ctx context.Conte
 	}
 
 	return &result, nil
+}
+
+// extractText unwraps nested JSON arrays to find the first string value.
+// Handles formats like "text", ["text"], [["text"]], or deeper nesting.
+func extractText(raw json.RawMessage) string {
+	// Try as a plain string first
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+
+	// Try as an array and recurse into the first element
+	var arr []json.RawMessage
+	if json.Unmarshal(raw, &arr) == nil && len(arr) > 0 {
+		return extractText(arr[0])
+	}
+
+	return ""
 }

@@ -119,17 +119,15 @@ func New(authToken, cookies string, options ...batchexecute.Option) *Client {
 			"pragma":          "no-cache",
 		},
 		URLParams: map[string]string{
-			// Update to January 2025 build version
-			"bl":    "boq_labs-tailwind-frontend_20250129.00_p0",
-			"f.sid": "-7121977511756781186",
+			"bl":    "boq_labs-tailwind-frontend_20260212.13_p0",
+			"f.sid": "7541095484378169959",
 			"hl":    "en",
-			// Omit rt parameter for JSON array format (easier to parse)
-			// "rt":    "c",  // Use "c" for chunked format, omit for JSON array
 		},
 	}
+	beClient := batchexecute.NewClient(config, options...)
 	return &Client{
-		Config: config,
-		client: batchexecute.NewClient(config, options...),
+		Config: beClient.Config(),
+		client: beClient,
 	}
 }
 
