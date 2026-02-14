@@ -36,6 +36,7 @@ var (
 	useDirectRPC      bool // Use direct RPC calls instead of orchestration service
 	skipSources       bool   // Skip fetching sources for chat (useful when project is inaccessible)
 	authUser          string // Google auth user index (for multi-account profiles)
+	clientOpts        []batchexecute.Option // Shared options (authuser, debug, etc.) for standalone service clients
 )
 
 // ChatSession represents a persistent chat conversation
@@ -567,6 +568,9 @@ func run() error {
 		}
 	}
 
+	// Store opts for standalone service clients that bypass api.Client
+	clientOpts = opts
+
 	for i := 0; i < 3; i++ {
 		if i > 0 {
 			if i == 1 {
@@ -1048,10 +1052,16 @@ func listNotes(c *api.Client, notebookID string) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
 	fmt.Fprintln(w, "ID\tTITLE\tLAST MODIFIED")
 	for _, note := range notes {
+		lastModified := "unknown"
+		if m := note.GetMetadata(); m != nil {
+			if t := m.GetLastModifiedTime(); t != nil {
+				lastModified = t.AsTime().Format(time.RFC3339)
+			}
+		}
 		fmt.Fprintf(w, "%s\t%s\t%s\n",
-			note.GetSourceId(),
+			note.GetSourceId().GetSourceId(),
 			note.Title,
-			note.GetMetadata().LastModifiedTime.AsTime().Format(time.RFC3339),
+			lastModified,
 		)
 	}
 	return w.Flush()
@@ -1271,7 +1281,7 @@ func heartbeat(c *api.Client) error {
 // Analytics and featured projects
 func getAnalytics(c *api.Client, projectID string) error {
 	// Create orchestration service client using the same auth as the main client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	req := &pb.GetProjectAnalyticsRequest{
 		ProjectId: projectID,
@@ -1295,7 +1305,7 @@ func getAnalytics(c *api.Client, projectID string) error {
 
 func listFeaturedProjects(c *api.Client) error {
 	// Create orchestration service client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	req := &pb.ListFeaturedProjectsRequest{
 		PageSize: 20,
@@ -1325,7 +1335,7 @@ func listFeaturedProjects(c *api.Client) error {
 // Enhanced source operations
 func refreshSource(c *api.Client, sourceID string) error {
 	// Create orchestration service client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	req := &pb.RefreshSourceRequest{
 		SourceId: sourceID,
@@ -1343,7 +1353,7 @@ func refreshSource(c *api.Client, sourceID string) error {
 
 func checkSourceFreshness(c *api.Client, sourceID string) error {
 	// Create orchestration service client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	req := &pb.CheckSourceFreshnessRequest{
 		SourceId: sourceID,
@@ -1371,7 +1381,7 @@ func checkSourceFreshness(c *api.Client, sourceID string) error {
 
 func discoverSources(c *api.Client, projectID, query string) error {
 	// Create orchestration service client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	req := &pb.DiscoverSourcesRequest{
 		ProjectId: projectID,
@@ -1410,7 +1420,7 @@ func discoverSources(c *api.Client, projectID, query string) error {
 // Artifact management
 func createArtifact(c *api.Client, projectID, artifactType string) error {
 	// Create orchestration service client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	// Parse artifact type
 	var aType pb.ArtifactType
@@ -1451,7 +1461,7 @@ func createArtifact(c *api.Client, projectID, artifactType string) error {
 
 func getArtifact(c *api.Client, artifactID string) error {
 	// Create orchestration service client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	req := &pb.GetArtifactRequest{
 		ArtifactId: artifactID,
@@ -1546,7 +1556,7 @@ func deleteArtifact(c *api.Client, artifactID string) error {
 	}
 
 	// Create orchestration service client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	req := &pb.DeleteArtifactRequest{
 		ArtifactId: artifactID,
@@ -1586,7 +1596,7 @@ func shareNotebook(c *api.Client, notebookID string) error {
 	fmt.Fprintf(os.Stderr, "Generating public share link...\n")
 
 	// Create RPC client directly for sharing project
-	rpcClient := rpc.New(authToken, cookies)
+	rpcClient := rpc.New(authToken, cookies, clientOpts...)
 	call := rpc.Call{
 		ID: "QDyure", // ShareProject RPC ID
 		Args: []interface{}{
@@ -1625,7 +1635,7 @@ func shareNotebook(c *api.Client, notebookID string) error {
 
 func submitFeedback(c *api.Client, message string) error {
 	// Create orchestration service client
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
+	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies, clientOpts...)
 
 	req := &pb.SubmitFeedbackRequest{
 		FeedbackType: "general",
@@ -1645,7 +1655,7 @@ func shareNotebookPrivate(c *api.Client, notebookID string) error {
 	fmt.Fprintf(os.Stderr, "Generating private share link...\n")
 
 	// Create RPC client directly for sharing project
-	rpcClient := rpc.New(authToken, cookies)
+	rpcClient := rpc.New(authToken, cookies, clientOpts...)
 	call := rpc.Call{
 		ID: "QDyure", // ShareProject RPC ID
 		Args: []interface{}{
@@ -1686,7 +1696,7 @@ func getShareDetails(c *api.Client, shareID string) error {
 	fmt.Fprintf(os.Stderr, "Getting share details...\n")
 
 	// Create RPC client directly for getting project details
-	rpcClient := rpc.New(authToken, cookies)
+	rpcClient := rpc.New(authToken, cookies, clientOpts...)
 	call := rpc.Call{
 		ID:   "JFMDGd", // GetProjectDetails RPC ID
 		Args: []interface{}{shareID},
