@@ -1203,7 +1203,7 @@ func (ba *BrowserAuth) tryExtractAuth(ctx context.Context) (token, cookies strin
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`WIZ_global_data.SNlM0e`, &token),
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			cks, err := network.GetCookies().WithUrls([]string{"https://notebooklm.google.com"}).Do(ctx)
+			cks, err := network.GetCookies().WithURLs([]string{"https://notebooklm.google.com"}).Do(ctx)
 			if err != nil {
 				return fmt.Errorf("get cookies: %w", err)
 			}
