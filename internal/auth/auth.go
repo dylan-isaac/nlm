@@ -24,6 +24,10 @@ type BrowserAuth struct {
 	cancel          context.CancelFunc
 	useExec         bool
 	keepOpenSeconds int // Keep browser open for N seconds after auth
+
+	// Session parameters extracted alongside auth token
+	FSid string // WIZ_global_data.FdrFJe - session ID for batchexecute
+	Bl   string // WIZ_global_data.cfb2h - frontend build label
 }
 
 func New(debug bool) *BrowserAuth {
@@ -667,7 +671,7 @@ func (ba *BrowserAuth) GetAuth(opts ...Option) (token, cookies string, err error
 		}))
 	}
 
-	return ba.extractAuthData(ctx)
+	return ba.extractAuthDataForURL(ctx, o.TargetURL)
 }
 
 // copyProfileData first resolves the profile name to a path and then calls copyProfileDataFromPath
@@ -1200,8 +1204,12 @@ func (ba *BrowserAuth) tryExtractAuth(ctx context.Context) (token, cookies strin
 		return "", "", fmt.Errorf("token not found or invalid")
 	}
 
+	// Extract session parameters (f.sid and bl) alongside the token
+	var fsid, bl string
 	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`WIZ_global_data.SNlM0e`, &token),
+		chromedp.Evaluate(`WIZ_global_data.FdrFJe || ""`, &fsid),
+		chromedp.Evaluate(`WIZ_global_data.cfb2h || ""`, &bl),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			cks, err := network.GetCookies().WithURLs([]string{"https://notebooklm.google.com"}).Do(ctx)
 			if err != nil {
@@ -1244,5 +1252,113 @@ func (ba *BrowserAuth) tryExtractAuth(ctx context.Context) (token, cookies strin
 		return "", "", fmt.Errorf("missing essential authentication cookies")
 	}
 
+	// Store session parameters on the struct for caller access
+	if fsid != "" {
+		ba.FSid = fsid
+	}
+	if bl != "" {
+		ba.Bl = bl
+	}
+
 	return token, cookies, nil
+}
+
+// SessionParams holds the session-specific parameters extracted from a NotebookLM page load.
+type SessionParams struct {
+	Token string // AT token (WIZ_global_data.SNlM0e)
+	FSid  string // Session ID (WIZ_global_data.FdrFJe)
+	Bl    string // Frontend build label (WIZ_global_data.cfb2h)
+}
+
+// FetchSessionParams makes an HTTP GET to NotebookLM using the provided cookies
+// and extracts the AT token, f.sid, and bl from the page HTML. This produces
+// credentials that work with the cookies (unlike the headless browser's AT token
+// which may be tied to a different session context).
+func FetchSessionParams(cookies, targetURL string, debug bool) (*SessionParams, error) {
+	if targetURL == "" {
+		targetURL = "https://notebooklm.google.com"
+	}
+
+	req, err := http.NewRequest("GET", targetURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Cookie", cookies)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+
+	client := &http.Client{
+		// Don't follow redirects to auth pages
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if strings.Contains(req.URL.Host, "accounts.google.com") {
+				return fmt.Errorf("redirected to login page — cookies may be expired")
+			}
+			return nil
+		},
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch page: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	html := string(body)
+	params := &SessionParams{}
+
+	// Extract WIZ_global_data values using simple string matching
+	// These appear as: WIZ_global_data.SNlM0e="value"
+	// or in a script block as: SNlM0e:"value"
+	extractValue := func(key string) string {
+		// Try pattern: key:"value" or key: "value"
+		patterns := []string{
+			key + `:\"`,
+			key + `: \"`,
+			key + `:"`,
+			key + `: "`,
+		}
+		for _, pat := range patterns {
+			idx := strings.Index(html, pat)
+			if idx < 0 {
+				continue
+			}
+			start := idx + len(pat)
+			// Find the closing quote (handle both \" and ")
+			if strings.Contains(pat, `\"`) {
+				end := strings.Index(html[start:], `\"`)
+				if end > 0 {
+					return html[start : start+end]
+				}
+			} else {
+				end := strings.Index(html[start:], `"`)
+				if end > 0 {
+					return html[start : start+end]
+				}
+			}
+		}
+		return ""
+	}
+
+	params.Token = extractValue("SNlM0e")
+	params.FSid = extractValue("FdrFJe")
+	params.Bl = extractValue("cfb2h")
+
+	if debug {
+		fmt.Fprintf(os.Stderr, "FetchSessionParams: token=%d chars, fsid=%s, bl=%s\n",
+			len(params.Token), params.FSid, params.Bl)
+	}
+
+	if params.Token == "" || len(params.Token) < 20 {
+		return nil, fmt.Errorf("failed to extract AT token from page HTML")
+	}
+
+	return params, nil
 }

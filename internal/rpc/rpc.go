@@ -3,6 +3,7 @@ package rpc
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dylan-isaac/nlm/internal/batchexecute"
@@ -119,8 +120,8 @@ func New(authToken, cookies string, options ...batchexecute.Option) *Client {
 			"pragma":          "no-cache",
 		},
 		URLParams: map[string]string{
-			"bl":    "boq_labs-tailwind-frontend_20260212.13_p0",
-			"f.sid": "7541095484378169959",
+			"bl":    envOrDefault("NLM_BL", "boq_labs-tailwind-frontend_20260212.13_p0"),
+			"f.sid": envOrDefault("NLM_FSID", "3001971158102529382"),
 			"hl":    "en",
 		},
 	}
@@ -198,4 +199,11 @@ func (c *Client) CreateNotebook(title string) (json.RawMessage, error) {
 // DeleteNotebook deletes a notebook by ID
 func (c *Client) DeleteNotebook(id string) error {
 	return fmt.Errorf("not implemented")
+}
+
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

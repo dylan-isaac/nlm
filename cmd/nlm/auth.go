@@ -34,6 +34,7 @@ type AuthOptions struct {
 	TryAllProfiles  bool
 	ProfileName     string
 	TargetURL       string
+	AuthUser        string
 	CheckNotebooks  bool
 	Debug           bool
 	Help            bool
@@ -64,6 +65,7 @@ func parseAuthFlags(args []string) (*AuthOptions, []string, error) {
 	authFlags.BoolVar(&opts.Help, "h", false, "Show help for auth command (shorthand)")
 	authFlags.IntVar(&opts.KeepOpenSeconds, "keep-open", 0, "Keep browser open for N seconds after successful auth")
 	authFlags.IntVar(&opts.KeepOpenSeconds, "k", 0, "Keep browser open for N seconds after successful auth (shorthand)")
+	authFlags.StringVar(&opts.AuthUser, "authuser", os.Getenv("NLM_AUTHUSER"), "Google account index (0, 1, 2, ...) for multi-account auth")
 
 	// Set custom usage
 	authFlags.Usage = func() {
@@ -74,7 +76,7 @@ func parseAuthFlags(args []string) (*AuthOptions, []string, error) {
 		authFlags.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExample: nlm auth login -all -notebooks\n")
 		fmt.Fprintf(os.Stderr, "Example: nlm auth login -profile Work\n")
-		fmt.Fprintf(os.Stderr, "Example: nlm auth login -keep-open 10\n")
+		fmt.Fprintf(os.Stderr, "Example: nlm auth login -authuser 1\n")
 		fmt.Fprintf(os.Stderr, "Example: nlm auth -all\n")
 	}
 
@@ -188,13 +190,29 @@ func handleAuth(args []string, debug bool) (string, string, error) {
 		return "", "", fmt.Errorf("error parsing auth flags: %w", err)
 	}
 
+	// If authuser is specified, append it to the target URL so the browser
+	// navigates to the correct Google account and extracts the right AT token
+	if opts.AuthUser != "" {
+		u, err := url.Parse(opts.TargetURL)
+		if err == nil {
+			q := u.Query()
+			q.Set("authuser", opts.AuthUser)
+			u.RawQuery = q.Encode()
+			opts.TargetURL = u.String()
+		}
+	}
+
 	// Show what we're going to do based on options
 	if opts.TryAllProfiles {
 		fmt.Fprintf(os.Stderr, "nlm: trying all browser profiles to find one with valid authentication...\n")
 	} else {
 		// Mask potentially sensitive profile name
 		maskedProfile := maskProfileName(opts.ProfileName)
-		fmt.Fprintf(os.Stderr, "nlm: launching browser to login... (profile:%v)\n", maskedProfile)
+		if opts.AuthUser != "" {
+			fmt.Fprintf(os.Stderr, "nlm: launching browser to login... (profile:%v, authuser:%v)\n", maskedProfile, opts.AuthUser)
+		} else {
+			fmt.Fprintf(os.Stderr, "nlm: launching browser to login... (profile:%v)\n", maskedProfile)
+		}
 	}
 
 	// Use the debug flag from options if set, otherwise use the global debug flag
@@ -231,15 +249,18 @@ func handleAuth(args []string, debug bool) (string, string, error) {
 		return "", "", fmt.Errorf("browser auth failed: %w", err)
 	}
 
-	// Extract authuser from target URL if present
-	extractedAuthUser := ""
-	if u, err := url.Parse(opts.TargetURL); err == nil {
-		if au := u.Query().Get("authuser"); au != "" {
-			extractedAuthUser = au
+	// Use the authuser value from the flag (which was also appended to the URL)
+	authUserValue := opts.AuthUser
+	if authUserValue == "" {
+		// Fallback: extract from target URL if it was set there directly
+		if u, err := url.Parse(opts.TargetURL); err == nil {
+			if au := u.Query().Get("authuser"); au != "" {
+				authUserValue = au
+			}
 		}
 	}
 
-	return persistAuthToDisk(cookies, token, opts.ProfileName, extractedAuthUser)
+	return persistAuthToDisk(cookies, token, opts.ProfileName, authUserValue, a.FSid, a.Bl)
 }
 
 func detectAuthInfo(cmd string) (string, string, error) {
@@ -258,11 +279,11 @@ func detectAuthInfo(cmd string) (string, string, error) {
 		return "", "", fmt.Errorf("no auth token found")
 	}
 	authToken := atMatch[1]
-	persistAuthToDisk(cookies, authToken, "", "")
+	persistAuthToDisk(cookies, authToken, "", "", "", "")
 	return authToken, cookies, nil
 }
 
-func persistAuthToDisk(cookies, authToken, profileName, authUserIdx string) (string, string, error) {
+func persistAuthToDisk(cookies, authToken, profileName, authUserIdx, fsid, bl string) (string, string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", "", fmt.Errorf("get home dir: %w", err)
@@ -282,6 +303,12 @@ func persistAuthToDisk(cookies, authToken, profileName, authUserIdx string) (str
 		profileName,
 		authUserIdx,
 	)
+	if fsid != "" {
+		content += fmt.Sprintf("NLM_FSID=%q\n", fsid)
+	}
+	if bl != "" {
+		content += fmt.Sprintf("NLM_BL=%q\n", bl)
+	}
 
 	if err := os.WriteFile(envFile, []byte(content), 0600); err != nil {
 		return "", "", fmt.Errorf("write env file: %w", err)
